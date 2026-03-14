@@ -1,61 +1,52 @@
+# 🏦 Banking Microservices System
 
-# Proyecto de Microservicios Bancarios
+![Java](https://img.shields.io/badge/Java-21-ED8B00?style=for-the-badge&logo=openjdk&logoColor=white)
+![Spring Boot](https://img.shields.io/badge/Spring_Boot-3.5.6-6DB33F?style=for-the-badge&logo=springboot&logoColor=white)
+![RabbitMQ](https://img.shields.io/badge/RabbitMQ-FF6600?style=for-the-badge&logo=rabbitmq&logoColor=white)
+![MySQL](https://img.shields.io/badge/MySQL-4479A1?style=for-the-badge&logo=mysql&logoColor=white)
+![Docker](https://img.shields.io/badge/Docker-2496ED?style=for-the-badge&logo=docker&logoColor=white)
+![Maven](https://img.shields.io/badge/Maven-C71A36?style=for-the-badge&logo=apachemaven&logoColor=white)
 
-## Descripción General
-Este proyecto implementa un sistema bancario distribuido mediante **microservicios**, desarrollado con **Spring Boot 3.5.6**, **Java 21**, y **Maven**.  
-Está compuesto por dos servicios principales:
-
-- **Microservicio Customers:** gestión de clientes y publicación de eventos en RabbitMQ.  
-- **Microservicio Accounts:** gestión de cuentas, transacciones y generación de reportes.  
-
-Cada microservicio posee su propia base de datos MySQL y se comunica de forma asíncrona utilizando **RabbitMQ**.  
-La orquestación de los servicios se realiza mediante **Docker Compose**.
+A distributed banking system built with a **microservices architecture** using Spring Boot 3, Java 21, RabbitMQ for async communication, and Docker Compose for orchestration.
 
 ---
 
-## Tecnologías Utilizadas
-- **Java 21 (LTS)**
-- **Spring Boot 3.5.6**
-- **Spring Data JPA**
-- **Spring Validation**
-- **Spring AMQP (RabbitMQ)**
-- **MySQL / MariaDB**
-- **Docker & Docker Compose**
-- **JUnit 5 / Mockito**
-- **Maven 3.9.9**
+## 📐 Architecture Overview
 
----
-
-## Arquitectura del Proyecto
-
-### Estructura General
 ```
-banking-microservices/
- ├── customers/
- │    ├── src/main/java/com/bank/customers/
- │    ├── Dockerfile
- │    └── pom.xml
- ├── accounts/
- │    ├── src/main/java/com/bank/accounts/
- │    ├── Dockerfile
- │    └── pom.xml
- ├── docker-compose.yml
- └── README.md
+                        ┌─────────────────────────────────┐
+                        │         Docker Compose           │
+                        │                                  │
+         ┌──────────────┤   ┌────────────┐                │
+         │  REST API    │   │  RabbitMQ  │                │
+         ▼              │   │  (Broker)  │                │
+┌─────────────────┐     │   └─────┬──────┘                │
+│  Customers      │─────┼─────────┤  customer.created     │
+│  Service :8081  │     │         ▼                        │
+│                 │     │   ┌─────────────────┐            │
+│  - CRUD clients │     │   │  Accounts       │            │
+│  - Publish      │     │   │  Service :8082  │            │
+│    events       │     │   │                 │            │
+└────────┬────────┘     │   │  - Accounts     │            │
+         │              │   │  - Transactions │            │
+         │              │   │  - Reports      │            │
+         ▼              │   └────────┬────────┘            │
+┌─────────────────┐     │            │                     │
+│  MySQL DB       │     │   ┌────────▼────────┐            │
+│  (customers)    │     │   │  MySQL DB       │            │
+└─────────────────┘     │   │  (accounts)     │            │
+                        │   └─────────────────┘            │
+                        └─────────────────────────────────┘
 ```
 
-Cada microservicio se ejecuta de forma independiente y expone su propia API REST.  
-La comunicación entre ellos se realiza mediante eventos RabbitMQ.
-
 ---
 
-## 1. Microservicio Customers
+## 🧩 Services
 
-### Funcionalidad
-- Creación, actualización, eliminación y consulta de clientes.
-- Publicación de eventos a RabbitMQ cuando se crea un nuevo cliente.
-- Persistencia en base de datos MySQL dedicada.
+### 👤 Customers Service — `localhost:8081`
+Handles client lifecycle and publishes events to RabbitMQ when a new customer is created.
 
-### Estructura de Paquetes
+**Package structure:**
 ```
 com.bank.customers
  ├── config
@@ -67,41 +58,10 @@ com.bank.customers
  └── CustomersApplication.java
 ```
 
-### Lógica de Negocio
-El método principal de creación genera un UUID, guarda el cliente y publica un evento:
+### 💳 Accounts Service — `localhost:8082`
+Manages bank accounts, processes transactions (deposits & withdrawals), validates balances, and generates financial reports by date range.
 
-```java
-@Service
-@RequiredArgsConstructor
-public class CustomerService {
-
-    private final CustomerRepository repository;
-    private final AmqpTemplate amqpTemplate;
-
-    @Transactional
-    public Customer create(Customer customer) {
-        customer.setCustomerId(UUID.randomUUID().toString());
-        Customer saved = repository.save(customer);
-
-        CustomerEvent event = new CustomerEvent(saved.getCustomerId(), saved.getName(), saved.getStatus());
-        amqpTemplate.convertAndSend("customers.exchange", "customer.created", event);
-
-        return saved;
-    }
-}
-```
-
----
-
-## 2. Microservicio Accounts
-
-### Funcionalidad
-- Creación de cuentas asociadas a un cliente.
-- Registro de transacciones (depósitos y retiros).
-- Validación de saldo disponible.
-- Generación de reportes financieros por rango de fechas.
-
-### Estructura de Paquetes
+**Package structure:**
 ```
 com.bank.accounts
  ├── config
@@ -114,147 +74,102 @@ com.bank.accounts
  └── AccountsApplication.java
 ```
 
-### Lógica de Negocio
-El método `register` maneja los movimientos y valida saldos:
+---
 
-```java
-@Transactional
-public Transaction register(String accountNumber, TransactionType type, BigDecimal amount) {
-    Account account = accountRepo.findByAccountNumber(accountNumber)
-        .orElseThrow(() -> new NotFoundException("Account not found"));
+## 🔗 Async Communication — RabbitMQ
 
-    BigDecimal newBalance = switch (type) {
-        case DEPOSIT -> account.getInitialBalance().add(amount);
-        case WITHDRAWAL -> {
-            if (account.getInitialBalance().compareTo(amount) < 0)
-                throw new InsufficientBalanceException("Insufficient balance");
-            yield account.getInitialBalance().subtract(amount);
-        }
-    };
-
-    account.setInitialBalance(newBalance);
-    accountRepo.save(account);
-
-    Transaction tx = new Transaction(UUID.randomUUID().toString(), account, type, amount, newBalance);
-    return txRepo.save(tx);
-}
-```
+| Service | Action | Exchange | Routing Key |
+|---|---|---|---|
+| Customers | Publishes event on customer creation | `customers.exchange` | `customer.created` |
+| Accounts | Listens and syncs customer data | `customers.exchange` | `customer.created` |
 
 ---
 
-## Comunicación con RabbitMQ
-El intercambio de mensajes se realiza mediante un **topic exchange**.
+## 🚀 Getting Started
 
-- **Customers Service** publica el evento:
-  - Exchange: `customers.exchange`
-  - Routing Key: `customer.created`
-- **Accounts Service** puede escuchar este evento para sincronizar datos del cliente.
+### Prerequisites
+- Java 21
+- Maven 3.9+
+- Docker & Docker Compose
 
----
-
-## Configuración Docker
-
-### Ejemplo Dockerfile (Customers)
-```dockerfile
-FROM eclipse-temurin:21-jdk AS build
-WORKDIR /app
-COPY . .
-RUN ./mvnw -q -DskipTests package
-
-FROM eclipse-temurin:21-jre
-WORKDIR /app
-COPY --from=build /app/target/*.jar customers.jar
-EXPOSE 8081
-ENTRYPOINT ["java", "-jar", "/app/customers.jar"]
-```
-
-### Docker Compose
-Archivo `docker-compose.yml` incluye:
-- **customers-service**  
-- **accounts-service**  
-- **MySQL** (dos contenedores independientes)  
-- **RabbitMQ**
-
-Cada servicio tiene su puerto expuesto:
-- Customers: `8081`
-- Accounts: `8082`
-- RabbitMQ Dashboard: `15672` (usuario: `guest`, contraseña: `guest`)
-
----
-
-## Pruebas Unitarias
-
-Se implementaron pruebas con **JUnit 5 y Mockito** para validar la lógica de negocio sin levantar el contexto de Spring.
-
-### CustomerServiceTest
-Valida que:
-- El cliente se guarde correctamente.
-- Se publique un evento en RabbitMQ.
-
-```java
-@ExtendWith(MockitoExtension.class)
-class CustomerServiceTest {
-
-    @Mock
-    private CustomerRepository repository;
-
-    @Mock
-    private AmqpTemplate amqpTemplate;
-
-    @InjectMocks
-    private CustomerService service;
-
-    @Test
-    void create_shouldSaveCustomerAndPublishEvent() {
-        Customer customer = new Customer();
-        customer.setName("Jose Lema");
-        customer.setStatus(true);
-
-        when(repository.save(any(Customer.class))).thenAnswer(invocation -> {
-            Customer c = invocation.getArgument(0);
-            c.setCustomerId(UUID.randomUUID().toString());
-            return c;
-        });
-
-        Customer saved = service.create(customer);
-
-        assertNotNull(saved.getCustomerId());
-        verify(repository, times(1)).save(any(Customer.class));
-        verify(amqpTemplate, times(1))
-            .convertAndSend(eq("customers.exchange"), eq("customer.created"), any(CustomerEvent.class));
-    }
-}
-```
-
----
-
-## Ejecución del Proyecto
-
-### Compilar y Construir
+### Build
 ```bash
 mvn clean package -DskipTests
 ```
 
-### Levantar con Docker
+### Run with Docker
 ```bash
 docker-compose up --build
 ```
 
-### Acceso a los Servicios
-| Servicio | URL |
-|-----------|-----|
-| Customers | http://localhost:8081 |
-| Accounts  | http://localhost:8082 |
-| RabbitMQ  | http://localhost:15672 |
+### Service URLs
 
-### Ejecutar Pruebas
+| Service | URL |
+|---|---|
+| Customers API | http://localhost:8081 |
+| Accounts API | http://localhost:8082 |
+| RabbitMQ Dashboard | http://localhost:15672 |
+
+> RabbitMQ credentials: `guest` / `guest`
+
+---
+
+## 📬 Postman Collection
+
+A ready-to-use Postman collection is included in the root of the project:
+
+```
+Devsu.postman_collection.json
+```
+
+Import it directly into Postman to test all available endpoints.
+
+---
+
+## 🧪 Running Tests
+
 ```bash
 mvn test
 ```
 
+Tests are written with **JUnit 5 + Mockito** and validate business logic without loading the full Spring context.
+
+**Coverage includes:**
+- Customer creation with RabbitMQ event publishing
+- Transaction registration with balance validation
+- Insufficient balance exception handling
+
 ---
 
-## Autor
-**Antony Chávez**  
-Entorno de desarrollo:  
-Windows 11 • Java 21 • Maven 3.9.9 • Docker 28.0.4 • Spring Boot 3.5.6
+## 🗄️ Database Schema
+
+The SQL schema is included in the root of the project:
+
+```
+banking_schema.sql
+```
+
+Each microservice has its own dedicated MySQL database following the **Database per Service** pattern.
+
+---
+
+## 🛠️ Tech Stack
+
+| Layer | Technology |
+|---|---|
+| Language | Java 21 (LTS) |
+| Framework | Spring Boot 3.5.6 |
+| Persistence | Spring Data JPA |
+| Messaging | Spring AMQP · RabbitMQ |
+| Database | MySQL / MariaDB |
+| Containerization | Docker · Docker Compose |
+| Testing | JUnit 5 · Mockito |
+| Build Tool | Maven 3.9.9 |
+
+---
+
+## 👨‍💻 Author
+
+**Antony Chávez** — Backend Developer  
+[![LinkedIn](https://img.shields.io/badge/LinkedIn-0077B5?style=flat&logo=linkedin&logoColor=white)](https://www.linkedin.com/in/antonychavez)
+[![GitHub](https://img.shields.io/badge/GitHub-Xavez05-181717?style=flat&logo=github&logoColor=white)](https://github.com/Xavez05)
