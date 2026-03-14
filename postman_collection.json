@@ -1,7 +1,7 @@
 {
 	"info": {
 		"_postman_id": "e28bab7b-aca1-4460-a9a2-79aebc714f1d",
-		"name": "Devsu",
+		"name": "banking-microservices-api",
 		"description": "End-to-end flow for customers, accounts, transactions, and reports",
 		"schema": "https://schema.getpostman.com/json/collection/v2.0.0/collection.json",
 		"_exporter_id": "7634273"
