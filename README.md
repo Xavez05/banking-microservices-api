@@ -119,7 +119,7 @@ docker-compose up --build
 A ready-to-use Postman collection is included in the root of the project:
 
 ```
-Devsu.postman_collection.json
+postman_collection.json
 ```
 
 Import it directly into Postman to test all available endpoints.
